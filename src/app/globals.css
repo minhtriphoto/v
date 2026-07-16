@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+:root {
+  --color-ink: #14151a;
+  --color-paper: #f7f5f0;
+  --color-indigo: #3730a9;
+  --color-indigo-light: #5b52d6;
+  --color-amber: #f5a623;
+  --color-success: #2f9e44;
+  --color-danger: #e03131;
+  --color-line: #d8d4c8;
+}
+
+@theme inline {
+  --color-ink: var(--color-ink);
+  --color-paper: var(--color-paper);
+  --color-indigo: var(--color-indigo);
+  --color-indigo-light: var(--color-indigo-light);
+  --color-amber: var(--color-amber);
+  --color-success: var(--color-success);
+  --color-danger: var(--color-danger);
+  --color-line: var(--color-line);
+  --font-display: var(--font-fraunces);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jbmono);
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+}
+
+.input {
+  border: 1px solid var(--color-line);
+  background: white;
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.85rem;
+  font-size: 0.95rem;
+  outline: none;
+}
+.input:focus-visible {
+  border-color: var(--color-indigo);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-indigo) 20%, transparent);
+}
+
+/* Đường viền răng cưa kiểu cuống vé — dùng cho lát cắt vé/sự kiện */
+.ticket-perforation {
+  background-image: radial-gradient(
+    circle,
+    var(--color-paper) 4px,
+    transparent 4.5px
+  );
+  background-size: 16px 16px;
+  background-repeat: repeat-x;
+  background-position: center;
+}
