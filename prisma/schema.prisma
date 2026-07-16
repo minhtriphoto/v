@@ -1,0 +1,412 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============= AUTH (NextAuth) =============
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String?
+  image        String?
+  passwordHash String? // null nếu đăng nhập bằng Google
+  createdAt    DateTime  @default(now())
+
+  accounts Account[]
+  sessions Session[]
+  events   Event[]
+  integrations Integration[]
+  contacts     Contact[]
+  tags         Tag[]
+  campaigns    Campaign[]
+  automations  Automation[]
+  gmailConnection GmailConnection?
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ============= EVENTS =============
+
+model Event {
+  id               String       @id @default(cuid())
+  ownerId          String
+  title            String
+  slug             String       @unique
+  description      String?
+  coverImageUrl    String?
+  startTime        DateTime
+  endTime          DateTime?
+  timezone         String       @default("Asia/Ho_Chi_Minh")
+  locationType     LocationType @default(ONLINE)
+  address          String?
+  onlineLink       String?
+  capacity         Int?
+  price            Int          @default(0)
+  currency         String       @default("VND")
+  requiresApproval Boolean      @default(false)
+  status           EventStatus  @default(PUBLISHED)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  owner         User                   @relation(fields: [ownerId], references: [id])
+  questions     RegistrationQuestion[]
+  registrations Registration[]
+  automations   Automation[]
+
+  @@index([ownerId])
+}
+
+enum LocationType {
+  ONLINE
+  OFFLINE
+  HYBRID
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  CANCELED
+}
+
+model RegistrationQuestion {
+  id       String       @id @default(cuid())
+  eventId  String
+  label    String
+  type     QuestionType
+  options  Json?
+  required Boolean      @default(false)
+  order    Int          @default(0)
+
+  event   Event                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  answers RegistrationAnswer[]
+}
+
+enum QuestionType {
+  TEXT
+  TEXTAREA
+  SELECT
+  CHECKBOX
+  NUMBER
+}
+
+model Registration {
+  id           String             @id @default(cuid())
+  eventId      String
+  contactId    String
+  name         String
+  email        String
+  status       RegistrationStatus @default(PENDING)
+  registeredAt DateTime           @default(now())
+  checkedInAt  DateTime?
+
+  event   Event                @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  contact Contact              @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  answers RegistrationAnswer[]
+
+  @@unique([eventId, email])
+  @@index([eventId, status])
+  @@index([contactId])
+}
+
+enum RegistrationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELED
+}
+
+model RegistrationAnswer {
+  id             String @id @default(cuid())
+  registrationId String
+  questionId     String
+  value          String
+
+  registration Registration         @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  question     RegistrationQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+}
+
+// ============= INTEGRATIONS (Giai đoạn 2) =============
+
+model Integration {
+  id          String          @id @default(cuid())
+  ownerId     String
+  type        IntegrationType
+  // TELEGRAM: { botToken, chatId, botUsername? }
+  // GOOGLE_SHEETS: { refreshToken, googleEmail, spreadsheetId?, sheetName? }
+  config      Json
+  connectedAt DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, type])
+}
+
+enum IntegrationType {
+  TELEGRAM
+  GOOGLE_SHEETS
+}
+
+// ============= CRM (Giai đoạn 3) =============
+
+// Contact được scope theo owner — mỗi organizer có sổ danh bạ riêng,
+// gộp theo email từ mọi sự kiện họ tổ chức.
+model Contact {
+  id           String   @id @default(cuid())
+  ownerId      String
+  email        String
+  name         String?
+  phone        String?
+  source       String? // vd "event:ten-slug", "manual"
+  score        Int      @default(0)
+  emailOptOut  Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  owner              User                @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  registrations      Registration[]
+  tags               ContactTag[]
+  interactions       Interaction[]
+  campaignRecipients CampaignRecipient[]
+  automationEnrollments AutomationEnrollment[]
+
+  @@unique([ownerId, email])
+  @@index([ownerId, score])
+}
+
+model Tag {
+  id      String @id @default(cuid())
+  ownerId String
+  name    String
+  color   String @default("#3730a9")
+
+  owner    User         @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  contacts ContactTag[]
+
+  @@unique([ownerId, name])
+}
+
+model ContactTag {
+  contactId String
+  tagId     String
+  addedAt   DateTime @default(now())
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tag     Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([contactId, tagId])
+}
+
+model Interaction {
+  id        String          @id @default(cuid())
+  contactId String
+  type      InteractionType
+  points    Int             @default(0) // điểm cộng vào score tại thời điểm ghi nhận
+  metadata  Json? // vd { eventId, eventTitle, note }
+  createdAt DateTime        @default(now())
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId, createdAt])
+}
+
+enum InteractionType {
+  REGISTER
+  APPROVED
+  CHECK_IN
+  TAG_ADDED
+  MANUAL_NOTE
+  EMAIL_SENT
+  EMAIL_OPEN
+  EMAIL_CLICK
+}
+
+// ============= EMAIL MARKETING (Giai đoạn 4) =============
+
+model Campaign {
+  id            String         @id @default(cuid())
+  ownerId       String
+  name          String
+  subject       String
+  // Mảng block soạn kéo thả: [{ id, type: "heading"|"paragraph"|"button"|"image"|"divider"|"spacer", ...props }]
+  contentBlocks Json
+  // { tagIds: string[], minScore?: number } — rỗng ({}) nghĩa là gửi cho tất cả
+  filterQuery   Json           @default("{}")
+  status        CampaignStatus @default(DRAFT)
+  sentAt        DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  owner      User                @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  recipients CampaignRecipient[]
+
+  @@index([ownerId])
+}
+
+enum CampaignStatus {
+  DRAFT
+  SENDING
+  SENT
+}
+
+model CampaignRecipient {
+  id             String          @id @default(cuid())
+  campaignId     String
+  contactId      String
+  trackingToken  String          @unique @default(cuid())
+  status         RecipientStatus @default(PENDING)
+  sentAt         DateTime?
+  openedAt       DateTime?
+  clickedAt      DateTime?
+  errorMessage   String?
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact  Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, contactId])
+  @@index([campaignId, status])
+}
+
+enum RecipientStatus {
+  PENDING
+  SENT
+  OPENED
+  CLICKED
+  FAILED
+}
+
+// ============= AUTOMATION (Giai đoạn 5) =============
+
+model Automation {
+  id          String            @id @default(cuid())
+  ownerId     String
+  eventId     String? // bắt buộc với mọi trigger trừ MANUAL
+  name        String
+  triggerType AutomationTrigger
+  // Chỉ dùng cho DAYS_BEFORE_EVENT / DAYS_AFTER_EVENT
+  offsetDays  Int?
+  status      AutomationStatus  @default(ACTIVE)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  owner       User                    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  event       Event?                  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  steps       AutomationStep[]
+  enrollments AutomationEnrollment[]
+
+  @@index([ownerId])
+}
+
+enum AutomationTrigger {
+  ON_REGISTER
+  ON_APPROVED
+  DAYS_BEFORE_EVENT
+  DAYS_AFTER_EVENT
+  MANUAL
+}
+
+enum AutomationStatus {
+  ACTIVE
+  PAUSED
+}
+
+model AutomationStep {
+  id           String   @id @default(cuid())
+  automationId String
+  order        Int
+  type         StepType
+  // SEND_EMAIL: { subject, contentBlocks }
+  // WAIT: { hours }
+  // CONDITION_BRANCH: { minScore, ifTrueOrder, ifFalseOrder }
+  // ADD_TAG: { tagName, color? }
+  config       Json
+
+  automation Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+
+  @@unique([automationId, order])
+}
+
+enum StepType {
+  SEND_EMAIL
+  WAIT
+  CONDITION_BRANCH
+  ADD_TAG
+}
+
+model AutomationEnrollment {
+  id             String           @id @default(cuid())
+  automationId   String
+  contactId      String
+  registrationId String?
+  currentOrder   Int              @default(0) // step "order" sẽ chạy tiếp theo
+  status         EnrollmentStatus @default(RUNNING)
+  nextRunAt      DateTime         @default(now())
+  enrolledAt     DateTime         @default(now())
+  lastError      String?
+
+  automation Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  contact    Contact    @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([automationId, contactId])
+  @@index([status, nextRunAt])
+}
+
+enum EnrollmentStatus {
+  RUNNING
+  COMPLETED
+  CANCELED
+  FAILED
+}
+
+// ============= GMAIL CÁ NHÂN (Giai đoạn 6) =============
+
+// Tách riêng khỏi Account (NextAuth) vì đây là quyền gửi email (gmail.send),
+// khác với quyền đăng nhập — cho phép user thu hồi quyền gửi mail độc lập
+// mà không ảnh hưởng tới việc đăng nhập.
+model GmailConnection {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  gmailAddress String
+  refreshToken String
+  connectedAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
